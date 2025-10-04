@@ -303,3 +303,85 @@ resource "aws_security_group_rule" "private-instance-sg-egress-rule" {
   protocol          = "-1"
   cidr_blocks       = ["0.0.0.0/0"]
 }
+
+# Database Security Group
+
+resource "aws_security_group" "database-sg" {
+  name        = "Database-sg"
+  description = "Database Security Group"
+  vpc_id      = aws_vpc.my-vpc.id
+
+  tags = {
+    Name = "Database-sg"
+  }
+}
+
+resource "aws_security_group_rule" "database-sg-ingress-rule" {
+  security_group_id        = aws_security_group.database-sg.id
+  type                     = "ingress"
+  from_port                = 3306 // Here we are using MYSQL/Aurora Database with 3306 port
+  to_port                  = 3306
+  protocol                 = "tcp"
+  source_security_group_id = aws_security_group.private-instance-sg.id
+}
+resource "aws_security_group_rule" "database-sg-egress-rule" {
+  security_group_id = aws_security_group.database-sg.id
+  type              = "egress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  cidr_blocks       = ["0.0.0.0/0"]
+}
+
+#creation of  mysql database 
+#dbsubnet group
+resource "aws_db_subnet_group" "webappdb-subnet-group" {
+  name       = "webappdb-subnet-group"
+  subnet_ids = [aws_subnet.db_private_subnet1.id, aws_subnet.db_private_subnet2.id]
+
+  tags = {
+    Name = "webappdb-subnet-group"
+  }
+}
+resource "aws_db_parameter_group" "default" {
+  name   = "rds-pg"
+  family = "mysql5.7"
+
+  parameter {
+    name  = "character_set_server"
+    value = "utf8"
+  }
+
+  parameter {
+    name  = "character_set_client"
+    value = "utf8"
+  }
+}
+
+resource "aws_db_instance" "webappdb" {
+  identifier              = var.db_identifier
+  allocated_storage       = var.db_storage
+  db_name                 = var.db_name
+  engine                  = var.db_engine
+  engine_version          = var.db_engine_version
+  instance_class          = var.db_instance_class
+  username                = var.db_username
+  password                = var.db_password
+  parameter_group_name    = aws_db_parameter_group.default.name
+  skip_final_snapshot     = true
+  publicly_accessible     = false
+  db_subnet_group_name    = aws_db_subnet_group.webappdb-subnet-group.name
+  multi_az                = true
+  backup_retention_period = 1
+  vpc_security_group_ids  = [aws_security_group.database-sg.id]
+}
+resource "aws_db_instance" "webappdb-replica" {
+  replicate_source_db     = aws_db_instance.webappdb.identifier
+  backup_retention_period = 7
+  identifier              = var.db_replica_identifier
+  instance_class          = var.db_instance_class
+  skip_final_snapshot     = true
+  publicly_accessible     = false
+  apply_immediately       = true
+  vpc_security_group_ids  = [aws_security_group.database-sg.id]
+}
