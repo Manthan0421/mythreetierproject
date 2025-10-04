@@ -10,3 +10,12 @@ variable "app_private_subnet2_cidr" {}
 variable "db_private_subnet1_cidr" {}
 variable "db_private_subnet2_cidr" {}
 variable "myip"{}
+variable "db_identifier" {}
+variable "db_storage" {}
+variable "db_name" {}
+variable "db_engine" {}
+variable "db_engine_version" {}
+variable "db_instance_class" {}
+variable "db_username" {}
+variable "db_password" {}
+variable "db_replica_identifier" {}
