@@ -10,3 +10,4 @@ variable "app_private_subnet1_cidr" {}
 variable "app_private_subnet2_cidr" {}
 variable "db_private_subnet1_cidr" {}
 variable "db_private_subnet2_cidr" {}
+variable "myip"{}
