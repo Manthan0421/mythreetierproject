@@ -1,2 +1,12 @@
 variable "region" {}
 variable "vpc_cidr" {}
+variable "vpc_cidr" {}
+variable "profile_name" {}
+variable "public_subnet1_cidr" {}
+variable "az1" {}
+variable "public_subnet2_cidr" {}
+variable "az2" {}
+variable "app_private_subnet1_cidr" {}
+variable "app_private_subnet2_cidr" {}
+variable "db_private_subnet1_cidr" {}
+variable "db_private_subnet2_cidr" {}
