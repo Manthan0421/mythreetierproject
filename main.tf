@@ -86,7 +86,6 @@ resource "aws_eip" "eip1" {
   domain   = "vpc"
 }
 resource "aws_eip" "eip2" {
-  instance = aws_instance.web.id
   domain   = "vpc"
 }
 
@@ -337,7 +336,7 @@ resource "aws_security_group_rule" "database-sg-egress-rule" {
 #dbsubnet group
 resource "aws_db_subnet_group" "webappdb-subnet-group" {
   name       = "webappdb-subnet-group"
-  subnet_ids = [aws_subnet.db_private_subnet1.id, aws_subnet.db_private_subnet2.id]
+  subnet_ids = [aws_subnet.db-private-subnet1.id, aws_subnet.db-private-subnet2.id]
 
   tags = {
     Name = "webappdb-subnet-group"
@@ -384,4 +383,153 @@ resource "aws_db_instance" "webappdb-replica" {
   publicly_accessible     = false
   apply_immediately       = true
   vpc_security_group_ids  = [aws_security_group.database-sg.id]
+}
+
+#internal load balancer
+resource "aws_lb_target_group" "apptierTG" {
+  name            = var.internal_lb_tg
+  port            = 4000
+  protocol        = "HTTP"
+  vpc_id          = aws_vpc.my-vpc.id
+  ip_address_type = "ipv4"
+
+  health_check {
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    interval            = 20
+    timeout             = 5
+    path                = "/health"
+
+  }
+}
+resource "aws_lb" "internal-lb" {
+  name               = var.internal_lb_name
+  internal           = true
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.internal-lb-sg.id]
+  subnets            = [aws_subnet.app-private-subnet1.id, aws_subnet.app-private-subnet2.id]
+  ip_address_type    = "ipv4"
+}
+resource "aws_lb_listener" "internal-lb-listener" {
+  load_balancer_arn = aws_lb.internal-lb.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.apptierTG.arn
+  }
+}
+
+#auto scaling group
+resource "aws_launch_template" "apptier-launch-template" {
+  name                   = var.app_tier_launch_template_name
+  image_id               = data.aws_ami.app-tier-ami.id
+  instance_type          = var.app_instance_type
+  vpc_security_group_ids = [aws_security_group.private-instance-sg.id]
+  iam_instance_profile {
+    name = var.profile_name
+  }
+  block_device_mappings {
+    device_name = "/dev/xvda"
+
+    ebs {
+      volume_size           = 8
+      volume_type           = "gp3"
+      iops                  = 3000
+      delete_on_termination = true
+      encrypted             = false
+      throughput            = 125
+    }
+  }
+}
+resource "aws_autoscaling_group" "app-tier-ASG" {
+  name                      = var.app_tier_ASG_name
+  max_size                  = var.max_capactiy_of_app_instances
+  min_size                  = var.min_capactiy_of_app_instances
+  health_check_grace_period = 300
+  health_check_type         = "ELB"
+  desired_capacity          = var.desired_capacity_of_app_instances
+  force_delete              = true
+  target_group_arns         = [aws_lb_target_group.apptierTG.arn]
+  launch_template {
+    id = aws_launch_template.apptier-launch-template.id
+  }
+  vpc_zone_identifier = [aws_subnet.app-private-subnet1.id, aws_subnet.app-private-subnet2.id]
+
+}
+
+#internet facing load balancer
+resource "aws_lb_target_group" "webtierTG" {
+  name            = var.interent_facing_lb_TG
+  port            = 80
+  protocol        = "HTTP"
+  vpc_id          = aws_vpc.my-vpc.id
+  ip_address_type = "ipv4"
+
+  health_check {
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    interval            = 20
+    timeout             = 5
+    path                = "/"
+
+  }
+}
+resource "aws_lb" "internet-facing-lb" {
+  name               = var.internet_facing_lb_name
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.internet-facing-lb-sg.id]
+  subnets            = [aws_subnet.public-subnet1.id, aws_subnet.public-subnet2.id]
+  ip_address_type    = "ipv4"
+}
+
+resource "aws_lb_listener" "internet-facing-lb-listener" {
+  load_balancer_arn = aws_lb.internet-facing-lb.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.webtierTG.arn
+  }
+}
+
+#web tier auto scaling group
+resource "aws_launch_template" "webtier-launch-template" {
+  name                   = var.web_tier_launch_template_name
+  image_id               = data.aws_ami.web-server-ami.id
+  instance_type          = var.web_instance_type
+  vpc_security_group_ids = [aws_security_group.web-tier-sg.id]
+  iam_instance_profile {
+    name = var.profile_name
+  }
+  block_device_mappings {
+    device_name = "/dev/xvda"
+
+    ebs {
+      volume_size           = 8
+      volume_type           = "gp3"
+      iops                  = 3000
+      delete_on_termination = true
+      encrypted             = false
+      throughput            = 125
+    }
+  }
+}
+resource "aws_autoscaling_group" "web-tier-ASG" {
+  name                      = var.web_tier_ASG_name
+  max_size                  = var.max_capacity_of_web_insatances
+  min_size                  = var.min_capacity_of_web_insatances
+  health_check_grace_period = 300
+  health_check_type         = "ELB"
+  desired_capacity          = var.desired_capacity_of_web_insatances
+  force_delete              = true
+  target_group_arns         = [aws_lb_target_group.webtierTG.arn]
+  launch_template {
+    id = aws_launch_template.webtier-launch-template.id
+  }
+  vpc_zone_identifier = [aws_subnet.public-subnet1.id, aws_subnet.public-subnet2.id]
+
 }
